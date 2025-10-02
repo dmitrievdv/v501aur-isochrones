@@ -15,7 +15,7 @@ function get_mesa_df(star_mass)
     col_names = splitted_lines[6]
     n_cols = length(col_names)
     cols = [[parse(Float64, splitted_line[i_col]) for splitted_line in splitted_lines[7:end]] for i_col in 1:n_cols]
-    mesa_df = DataFrame([(name_col_tuple[1] => name_col_tuple[2]) for name_col_tuple in zip(col_names, cols)])
+    mesa_df = DataFrame([Pair(name_col_tuple...) for name_col_tuple in zip(col_names, cols)])
 end
 
 function get_age_df(mesa_df, lg_age)
@@ -24,7 +24,7 @@ function get_age_df(mesa_df, lg_age)
     println(i_age)
 
     if isnothing(i_age)
-        df = DataFrame([(name_val_tuple[1] => name_val_tuple[2]) for name_val_tuple in zip(names(mesa_df), collect(mesa_df[end,:]))])
+        df = DataFrame([Pair(name_val_tuple...) for name_val_tuple in zip(names(mesa_df), collect(mesa_df[end,:]))])
         df.model_number .= -1.0
         df.star_age .= 10^lg_age
         return df
@@ -37,7 +37,7 @@ function get_age_df(mesa_df, lg_age)
     next_age = mesa_df.star_age[i_age]
 
     vals_age = vals_prev_age + (10^lg_age - prev_age)/(next_age - prev_age)*(vals_next_age - vals_prev_age)
-    return DataFrame([(name_val_tuple[1] => name_val_tuple[2]) for name_val_tuple in zip(names(mesa_df), vals_age)])
+    return DataFrame([Pair(name_val_tuple...) for name_val_tuple in zip(names(mesa_df), vals_age)])
 end
 
 function get_isochrone_df(mesa_dfs, lg_age)
@@ -76,8 +76,8 @@ mass_function = 0.4
 
 isochrone_dfs = get_isochrone_df.(Ref(mesa_dfs), lg_ages)
 
-fig_transit = Figure()
-ax_transit = Axis(fig_transit[1,1], xlabel = L"M_1", ylabel = L"\lg L_1 - \lg L_2")
+fig_binary = Figure()
+ax_binary = Axis(fig_binary[1,1], xlabel = L"M_1", ylabel = L"\lg L_1 - \lg L_2")
 for (i_age, lg_age) in enumerate(lg_ages)
     isochrone_df = isochrone_dfs[i_age]
     isochrone_df.log_L[isochrone_df.model_number .< 0] .= NaN
@@ -89,9 +89,9 @@ for (i_age, lg_age) in enumerate(lg_ages)
     if isempty(Δlg_L[@. !isnan(Δlg_L)])
         continue
     end
-    lines!(ax_transit, primary_masses, Δlg_L, label = "lg t = $lg_age")
+    lines!(ax_binary, primary_masses, Δlg_L, label = "lg t = $lg_age")
 end
-axislegend(ax_transit)
+axislegend(ax_binary)
 
 
 
