@@ -44,6 +44,50 @@ function get_isochrone_df(mesa_dfs, lg_age)
     foldl(vcat, get_age_df.(mesa_dfs, lg_age))
 end
 
+function interpolate_isochrone_df(isochrone_df, M)
+    isochrone_masses = isochrone_df.star_mass[isochrone_df.model_number .> 0]
+    min_mass = minimum(isochrone_masses)
+    max_mass = maximum(isochrone_masses)
+    if ((M > max_mass) | (M < min_mass))
+        df = DataFrame([Pair(name_val_tuple...) for name_val_tuple in zip(names(isochrone_df), collect(isochrone_df[end,:]))])
+        df[:,:] .= NaN
+        df.model_number .= -1.0
+        return df
+    end
+
+    i_mass = findfirst(x -> x > M, isochrone_df.star_mass)
+    vals_prev = collect(isochrone_df[i_mass-1,:])
+    vals_next = collect(isochrone_df[i_mass,:])
+
+    mass_prev = isochrone_df.star_mass[i_mass-1]
+    mass_next = isochrone_df.star_mass[i_mass]
+
+    vals = vals_prev + (M - mass_prev)/(mass_next - mass_prev)*(vals_next - vals_prev)
+    return DataFrame([Pair(name_val_tuple...) for name_val_tuple in zip(names(isochrone_df), vals)])
+end
+
+function interpolate_isochrone_df(isochrone_df, M)
+    isochrone_masses = isochrone_df.star_mass[isochrone_df.model_number .> 0]
+    min_mass = minimum(isochrone_masses)
+    max_mass = maximum(isochrone_masses)
+    if ((M > max_mass) | (M < min_mass))
+        df = DataFrame([Pair(name_val_tuple...) for name_val_tuple in zip(names(isochrone_df), collect(isochrone_df[end,:]))])
+        df[:,:] .= NaN
+        df.model_number .= -1.0
+        return df
+    end
+
+    i_mass = findfirst(x -> x > M, isochrone_df.star_mass)
+    vals_prev = collect(isochrone_df[i_mass-1,:])
+    vals_next = collect(isochrone_df[i_mass,:])
+
+    mass_prev = isochrone_df.star_mass[i_mass-1]
+    mass_next = isochrone_df.star_mass[i_mass]
+
+    vals = vals_prev + (M - mass_prev)/(mass_next - mass_prev)*(vals_next - vals_prev)
+    return DataFrame([Pair(name_val_tuple...) for name_val_tuple in zip(names(isochrone_df), vals)])
+end
+
 function interpolate_isochrone_lg_L(isochrone_df, M)
     isochrone_masses = isochrone_df.star_mass[isochrone_df.model_number .> 0]
     min_mass = minimum(isochrone_masses)
@@ -77,21 +121,28 @@ mass_function = 0.4
 isochrone_dfs = get_isochrone_df.(Ref(mesa_dfs), lg_ages)
 
 fig_binary = Figure()
-ax_binary = Axis(fig_binary[1,1], xlabel = L"M_1", ylabel = L"\lg L_1 - \lg L_2")
+ax_mass = Axis(fig_binary[1,1], xlabel = L"M_1", ylabel = L"\lg L_1 - \lg L_2")
+ax_logg = Axis(fig_binary[1,2], xlabel = L"\lg g", ylabel = L"\lg L_1 - \lg L_2")
+ax_teff = Axis(fig_binary[1,3], xlabel = L"T_\mathrm{eff}", ylabel = L"\lg L_1 - \lg L_2")
+
 for (i_age, lg_age) in enumerate(lg_ages)
     isochrone_df = isochrone_dfs[i_age]
     isochrone_df.log_L[isochrone_df.model_number .< 0] .= NaN
     primary_masses = [2.25:0.25:7.0;]
     secondary_masses = find_secondary_mass.(mass_function, primary_masses)
-    lg_L_primary = interpolate_isochrone_lg_L.(Ref(isochrone_df), primary_masses)
-    lg_L_secondary = interpolate_isochrone_lg_L.(Ref(isochrone_df), secondary_masses)
+    primary_dfs = foldl(vcat, interpolate_isochrone_df.(Ref(isochrone_df), primary_masses))
+    secondary_dfs = foldl(vcat, interpolate_isochrone_df.(Ref(isochrone_df), secondary_masses))
+    lg_L_primary = primary_dfs.log_L
+    lg_L_secondary = secondary_dfs.log_L
     Δlg_L = lg_L_primary - lg_L_secondary
     if isempty(Δlg_L[@. !isnan(Δlg_L)])
         continue
     end
-    lines!(ax_binary, primary_masses, Δlg_L, label = "lg t = $lg_age")
+    lines!(ax_mass, primary_dfs.star_mass, Δlg_L, label = "lg t = $lg_age")
+    lines!(ax_logg, primary_dfs.log_g, Δlg_L)
+    lines!(ax_teff, primary_dfs.Teff, Δlg_L)
 end
-axislegend(ax_binary)
+axislegend(ax_mass)
 
 
 
@@ -113,4 +164,4 @@ end
 
 axislegend(ax_tracks)
 axislegend(ax_iso)
-fig
+fig_binary
