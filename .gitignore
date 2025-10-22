@@ -1,1 +1,4 @@
-mesa-data/*
+mesa-data*
+kurucz-p00/*
+*.csv
+*.zip
