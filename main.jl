@@ -10,9 +10,34 @@ using Dierckx
 
 include("kurucz-int.jl")
 
-star_masses = [1:0.15:7;]
+star_masses = [1:0.15:7; 4.70:0.05:5.0;]
+sort!(star_masses)
 mesa_dir = "mesa-data"
 mesa_processed_dir = "mesa-data-processed"
+
+function process_mesa_history_data(dir)
+    tracks_dir = "$dir/mesa_tracks"
+    models = readdir(tracks_dir)
+    for model in models
+        mass, z, rot = [parse(Float64, m.match) for m in eachmatch(r"[0-9]+.[0-9]+", model)]
+        output_file = @sprintf "ROT%.2fM%.2fZ%.4f.csv" rot mass z
+
+        model_dir = "$tracks_dir/$model"
+        suffixes = [split(dir, '_')[2] for dir in readdir(model_dir)]
+        model_df = foldr(vcat, [get_mesa_df("$model_dir/LOGS_$suffix/history.data") for suffix in suffixes])
+        sort!(model_df, [:model_number])
+        CSV.write("$mesa_processed_dir/$output_file", model_df)
+    end
+end
+
+function get_mesa_df(mesa_file :: AbstractString)
+    lines = readlines(mesa_file)
+    splitted_lines = [split(line) for line in lines]
+    col_names = splitted_lines[6]
+    n_cols = length(col_names)
+    cols = [[parse(Float64, splitted_line[i_col]) for splitted_line in splitted_lines[7:end]] for i_col in 1:n_cols]
+    mesa_df = DataFrame([Pair(name_col_tuple...) for name_col_tuple in zip(col_names, cols)])
+end
 
 function get_mesa_df(star_mass)
     mesa_file_name = "track_M$(star_mass)_Z0.0147_ROT0.00_history.data"
