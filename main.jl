@@ -10,7 +10,7 @@ using Dierckx
 
 include("kurucz-int.jl")
 
-star_masses = [1:0.15:7; 4.70:0.05:5.0;]
+star_masses = [1:0.15:7; 3.0:0.05:5.0;]
 sort!(star_masses)
 mesa_dir = "mesa-data"
 mesa_processed_dir = "mesa-data-processed"
@@ -50,21 +50,28 @@ function get_mesa_df(star_mass)
     mesa_df = DataFrame([Pair(name_col_tuple...) for name_col_tuple in zip(col_names, cols)])
 end
 
-function get_mesa_df_processed(star_mass)
+function get_mesa_df_processed(star_mass :: Real)
     star_mass_str = @sprintf "%.2f" star_mass
     mesa_file_name = "ROT0.00M$(star_mass_str)Z0.0147.csv"
 
+    get_mesa_df_processed(mesa_file_name)
+end
+
+function get_mesa_df_processed(mesa_file_name)
     CSV.read("$mesa_processed_dir/$mesa_file_name", DataFrame)
 end
 
-function get_mesa_df_processed(star_mass, tess_response_spl, Av)
-    star_mass_str = @sprintf "%.2f" star_mass
-    mesa_file_name = "ROT0.00M$(star_mass_str)Z0.0147.csv"
+function get_mesa_df_processed(mesa_file_name :: AbstractString, mesa_dir :: AbstractString)
+    CSV.read("$mesa_dir/$mesa_file_name", DataFrame)
+end
 
-    mesa_df = CSV.read("$mesa_processed_dir/$mesa_file_name", DataFrame)
+function get_mesa_df_processed(mesa_file_name, tess_response_spl, Av)
+    mesa_df = get_mesa_df_processed(mesa_file_name)
+
     n_mesa = nrow(mesa_df)
 
     log_tess_luminosity = zeros(n_mesa)
+    log_tess_luminosity_noext = zeros(n_mesa)
 
     for i_mesa = 1:n_mesa
         log_tess_luminosity[i_mesa] = try
@@ -72,11 +79,29 @@ function get_mesa_df_processed(star_mass, tess_response_spl, Av)
         catch 
             -1e2
         end
+
+        log_tess_luminosity_noext[i_mesa] = try
+            log10(mesa_df.radius[i_mesa]^2 * calc_tess_kurucz_flux_no_extinction(mesa_df.Teff[i_mesa], mesa_df.log_g[i_mesa], tess_response_spl))
+        catch 
+            -1e2
+        end
     end
     # println(log_tess_luminosity)
 
     mesa_df[!, :log_TESS] = log_tess_luminosity
+    mesa_df[!, :log_TESS_noext] = log_tess_luminosity_noext
+
+    mkpath("$mesa_processed_dir-tess")
+    CSV.write("$mesa_processed_dir-tess/$mesa_file_name", mesa_df)
+
     mesa_df
+end
+
+function get_mesa_df_processed(star_mass :: Real, tess_response_spl, Av)
+    star_mass_str = @sprintf "%.2f" star_mass
+    mesa_file_name = "ROT0.00M$(star_mass_str)Z0.0147.csv"
+
+    get_mesa_df_processed(mesa_file_name, tess_response_spl, Av)
 end
 
 function get_age_df(mesa_df, lg_age)
@@ -175,8 +200,10 @@ end
 
 tess_response_spl = read_tess_response_spl()
 Av = 0.54*3.1
-mesa_dfs = get_mesa_df_processed.(star_masses, Ref(tess_response_spl), Av)
-lg_ages = [7.5:0.1:8.9;]
+# mesa_dfs = get_mesa_df_processed.(readdir(mesa_processed_dir), Ref(tess_response_spl), Av)
+mesa_dfs = get_mesa_df_processed.(readdir(mesa_processed_dir), Ref("mesa-data-processed-tess"))
+star_masses = [mesa_df.star_mass[1] for mesa_df in mesa_dfs]
+lg_ages = [8.0:0.1:8.6;]
 
 luminosity_rel = 100
 mass_function = 0.1373
@@ -188,7 +215,11 @@ fig_binary = Figure()
 ax_mass = Axis(fig_binary[1,1], xlabel = L"M_1", ylabel = L"\lg F_1 - \lg F_2")
 ax_2mass = Axis(fig_binary[1,2], xlabel = L"M_2", ylabel = L"\lg F_1 - \lg F_2")
 ax_logg = Axis(fig_binary[2,1], xlabel = L"\lg g", ylabel = L"\lg F_1 - \lg F_2")
+ylims!(ax_logg, (1.4, 2.4))
+xlims!(ax_logg, (1.4, 3.0))
 ax_teff = Axis(fig_binary[2,2], xlabel = L"T_\mathrm{eff}", ylabel = L"\lg F_1 - \lg F_2")
+ylims!(ax_teff, (1.4, 2.4))
+xlims!(ax_teff, (4000, 6000))
 
 
 
@@ -215,7 +246,7 @@ for (i_age, lg_age) in enumerate(lg_ages)
     lines!(ax_logg, primary_dfs.log_g, Δlg_TESS)
     lines!(ax_teff, primary_dfs.Teff, Δlg_TESS)
 end
-axislegend(ax_mass)
+axislegend(ax_mass, position = :lt)
 
 
 
