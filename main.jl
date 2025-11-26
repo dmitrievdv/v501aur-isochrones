@@ -1,5 +1,5 @@
 using Makie
-using GLMakie
+using CairoMakie, GLMakie
 using DataFrames, CSV
 using Polynomials
 using LaTeXStrings
@@ -14,11 +14,17 @@ star_masses = [1:0.15:7; 3.0:0.05:5.0;]
 sort!(star_masses)
 mesa_dir = "mesa-data"
 mesa_processed_dir = "mesa-data-processed"
+mesa_processed_temp = "mesa-data-processed-temp"
+
+mkpath(mesa_dir)
+mkpath(mesa_processed_dir)
+mkpath(mesa_processed_temp)
 
 function process_mesa_history_data(dir)
     tracks_dir = "$dir/mesa_tracks"
     models = readdir(tracks_dir)
     for model in models
+        println(model)
         mass, z, rot = [parse(Float64, m.match) for m in eachmatch(r"[0-9]+.[0-9]+", model)]
         output_file = @sprintf "ROT%.2fM%.2fZ%.4f.csv" rot mass z
 
@@ -26,7 +32,7 @@ function process_mesa_history_data(dir)
         suffixes = [split(dir, '_')[2] for dir in readdir(model_dir)]
         model_df = foldr(vcat, [get_mesa_df("$model_dir/LOGS_$suffix/history.data") for suffix in suffixes])
         sort!(model_df, [:model_number])
-        CSV.write("$mesa_processed_dir/$output_file", model_df)
+        CSV.write("$mesa_processed_temp/$output_file", model_df)
     end
 end
 
@@ -57,16 +63,16 @@ function get_mesa_df_processed(star_mass :: Real)
     get_mesa_df_processed(mesa_file_name)
 end
 
-function get_mesa_df_processed(mesa_file_name)
-    CSV.read("$mesa_processed_dir/$mesa_file_name", DataFrame)
-end
+# function get_mesa_df_processed(mesa_file_name)
+#     CSV.read("$mesa_processed_dir/$mesa_file_name", DataFrame)
+# end
 
-function get_mesa_df_processed(mesa_file_name :: AbstractString, mesa_dir :: AbstractString)
+function get_mesa_df_processed(mesa_file_name :: AbstractString, mesa_dir = mesa_processed_dir :: AbstractString)
     CSV.read("$mesa_dir/$mesa_file_name", DataFrame)
 end
 
-function get_mesa_df_processed(mesa_file_name, tess_response_spl, Av)
-    mesa_df = get_mesa_df_processed(mesa_file_name)
+function get_mesa_df_processed(mesa_file_name, tess_response_spl, Av, mesa_dir = mesa_processed_dir :: AbstractString)
+    mesa_df = get_mesa_df_processed(mesa_file_name, mesa_dir)
 
     n_mesa = nrow(mesa_df)
 
@@ -198,9 +204,12 @@ function find_secondary_mass(mass_function, primary_mass)
     return real.(mass_poly_roots[abs.(imag.(mass_poly_roots)) .≈ 0.0])[1]
 end
 
+mesa_model_dir = "/home/coloboquito/work/progs/mesa/v501aur"
+# process_mesa_history_data(mesa_model_dir)
+
 tess_response_spl = read_tess_response_spl()
 Av = 0.54*3.1
-# mesa_dfs = get_mesa_df_processed.(readdir(mesa_processed_dir), Ref(tess_response_spl), Av)
+# mesa_dfs = get_mesa_df_processed.(readdir(mesa_processed_temp), Ref(tess_response_spl), Av, mesa_processed_temp)
 mesa_dfs = get_mesa_df_processed.(readdir(mesa_processed_dir), Ref("mesa-data-processed-tess"))
 star_masses = [mesa_df.star_mass[1] for mesa_df in mesa_dfs]
 lg_ages = [8.0:0.1:8.6;]
@@ -211,13 +220,19 @@ mass_function = 0.1373
 
 isochrone_dfs = get_isochrone_df.(Ref(mesa_dfs), lg_ages)
 
-fig_binary = Figure()
-ax_mass = Axis(fig_binary[1,1], xlabel = L"M_1", ylabel = L"\lg F_1 - \lg F_2")
-ax_2mass = Axis(fig_binary[1,2], xlabel = L"M_2", ylabel = L"\lg F_1 - \lg F_2")
-ax_logg = Axis(fig_binary[2,1], xlabel = L"\lg g", ylabel = L"\lg F_1 - \lg F_2")
+CairoMakie.activate!()
+
+fig_binary = Figure(size = (900, 900))
+ax_mass = Axis(fig_binary[1,1], xlabel = L"M_1", ylabel = L"\lg F_1 - \lg F_2", 
+                xticks = WilkinsonTicks(6;k_min = 5,k_max = 7), yticks = WilkinsonTicks(6;k_min = 5,k_max = 7))
+ax_2mass = Axis(fig_binary[1,2], xlabel = L"M_2", ylabel = L"\lg F_1 - \lg F_2", 
+                xticks = WilkinsonTicks(6;k_min = 5,k_max = 7), yticks = WilkinsonTicks(6;k_min = 5,k_max = 7))
+ax_logg = Axis(fig_binary[2,1], xlabel = L"\lg g", ylabel = L"\lg F_1 - \lg F_2", 
+                xticks = WilkinsonTicks(6;k_min = 5,k_max = 7), yticks = WilkinsonTicks(6;k_min = 5,k_max = 7))
 ylims!(ax_logg, (1.4, 2.4))
 xlims!(ax_logg, (1.4, 3.0))
-ax_teff = Axis(fig_binary[2,2], xlabel = L"T_\mathrm{eff}", ylabel = L"\lg F_1 - \lg F_2")
+ax_teff = Axis(fig_binary[2,2], xlabel = L"T_\mathrm{eff}", ylabel = L"\lg F_1 - \lg F_2", 
+                    xticks = WilkinsonTicks(6,k_min = 5,k_max = 7), yticks = WilkinsonTicks(6,k_min = 5,k_max = 7))
 ylims!(ax_teff, (1.4, 2.4))
 xlims!(ax_teff, (4000, 6000))
 
@@ -241,8 +256,8 @@ for (i_age, lg_age) in enumerate(lg_ages)
     if isempty(Δlg_L[@. !isnan(Δlg_L)])
         continue
     end
-    lines!(ax_mass, primary_dfs.star_mass, Δlg_TESS, label = "lg t = $lg_age")
-    lines!(ax_2mass, secondary_dfs.star_mass, Δlg_TESS, label = "lg t = $lg_age")
+    lines!(ax_mass, primary_dfs.star_mass, Δlg_TESS, label = L"\lg t = %$lg_age")
+    lines!(ax_2mass, secondary_dfs.star_mass, Δlg_TESS, label = L"\lg t = %$lg_age")
     lines!(ax_logg, primary_dfs.log_g, Δlg_TESS)
     lines!(ax_teff, primary_dfs.Teff, Δlg_TESS)
 end
