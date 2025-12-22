@@ -7,7 +7,7 @@ using Printf
 using FITSIO
 using Dierckx
 using Optim
-using Interpolations
+using DataInterpolations
 
 include("kurucz-int.jl")
 
@@ -89,8 +89,8 @@ lg_flux_rel = 1.91; lg_flux_err = 0.05
 mass_function = 0.1373; mass_function_err = 0.0002
 
 # сетки по различным параметрам (μ = m/max_mass)
-n_μ_1 = 500; n_μ_2 = 500; n_age = 400
-n_m_1 = 400; n_m_2 = 10; n_f = 10
+n_μ_1 = 500; n_μ_2 = 500; n_age = 800
+n_m_1 = 800; n_m_2 = 10; n_f = 40
 
 μ_1_start = 0.8; μ_1_end = 0.99; μ_1_step = (μ_1_end-μ_1_start)/n_μ_1
 μ_2_start = 0.3; μ_2_end = 0.5; μ_2_step = (μ_2_end-μ_2_start)/n_μ_2
@@ -128,7 +128,7 @@ posterior= stack([calc_posterior_mass_function(lg_age, ms_1/max_mass, mass_funct
 posterior = posterior / sum(posterior)/ lg_age_step/m_1_step/f_step
 
 # сглаживание постериора расчетом вероятности в квадрате smooth_n*smooth_n точек сетки по m,lg t
-smooth_n = 4
+smooth_n = 1
 smoothed_posterior = zeros(n_m_1 ÷ smooth_n, n_f, n_age ÷ smooth_n)
 smoothed_ms_1 = zeros(n_m_1 ÷ smooth_n)
 smoothed_lg_ages = zeros(n_age ÷ smooth_n) 

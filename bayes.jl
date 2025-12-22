@@ -42,6 +42,9 @@ function prior_μ(lg_age, μ_1, μ_2, poly_max_fit)
     m^2/(age_2 - age_1)*IMF(m*μ_1)*IMF(m*μ_2)*log(10)*10^lg_age
 end
 
+"""
+получение важных для статистики параметров из даты (массы, )
+"""
 function extract_important_data(mesa_df, poly_max_fit)
     return hcat(log10.(mesa_df.star_age), mesa_df.star_mass ./ calc_max_mass.(log10.(mesa_df.star_age), Ref(poly_max_fit)), mesa_df.log_TESS)
 end
@@ -71,8 +74,8 @@ function extract_important_data_isochrone(log_age, mesa_dfs, poly_max_fit)
             i_first-5:i_first+4
         end
 
-        itp_mass = interpolate(data[itp_indeces, 1], data[itp_indeces, 2], AkimaMonotonicInterpolation())
-        itp_flux = interpolate(data[itp_indeces, 1], data[itp_indeces, 3], AkimaMonotonicInterpolation())
+        itp_mass = AkimaInterpolation(data[itp_indeces, 2], data[itp_indeces, 1])
+        itp_flux = AkimaInterpolation(data[itp_indeces, 3], data[itp_indeces, 1])
 
         isochrone[i_mesa,1] = itp_mass(log_age)
         isochrone[i_mesa,2] = itp_flux(log_age)
@@ -96,8 +99,8 @@ function extract_important_data_isochrone(log_age, mesa_dfs, poly_max_fit)
     itp_flux_points = last_points_sorted[itp_indeces,3]
 
 
-    itp_mass = interpolate(itp_ages_points, itp_mass_points, AkimaMonotonicInterpolation())
-    itp_flux = interpolate(itp_ages_points, itp_flux_points, AkimaMonotonicInterpolation())
+    itp_mass = AkimaInterpolation(itp_mass_points, itp_ages_points)
+    itp_flux = AkimaInterpolation(itp_flux_points, itp_ages_points)
 
     isochrone[i_last+1,1] = itp_mass(log_age)
     isochrone[i_last+1,2] = itp_flux(log_age)
@@ -109,14 +112,14 @@ end
 function find_tess_flux(lg_age, iso_mass :: Real, mesa_dfs, poly_max_fit)
     isochrone = extract_important_data_isochrone(lg_age, mesa_dfs, poly_max_fit)
     # sort_is = sortperm(isochrone[:,1])
-    itp_flux = interpolate(isochrone[:,1], isochrone[:,2], AkimaMonotonicInterpolation())
+    itp_flux = AkimaInterpolation(isochrone[:,2], isochrone[:,1])
     itp_flux(iso_mass)
 end
 
 function find_tess_flux(lg_age, iso_mass, mesa_dfs, poly_max_fit)
     isochrone = extract_important_data_isochrone(lg_age, mesa_dfs, poly_max_fit)
     sort_is = sortperm(isochrone[:,1])
-    itp_flux = interpolate(isochrone[sort_is,1], isochrone[sort_is,2], AkimaMonotonicInterpolation())
+    itp_flux = AkimaInterpolation(isochrone[sort_is,2], isochrone[sort_is,1])
     min_mass = isochrone[1,1]
     # println(min_mass * calc_max_mass(lg_age, poly_max_fit))
     map(iso_mass) do μ
