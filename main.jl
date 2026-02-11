@@ -55,6 +55,22 @@ function fit_max_mass(max_age, max_mass, poly_deg)
     res.minimizer
 end
 
+function find_log_max_age(mesa_df, min_logg)
+    i_last = findlast(logg -> logg > min_logg, mesa_df.log_g)
+    if i_last == nrow(mesa_df)
+        return 9.0
+    end
+    linear_interpolation(min_logg, mesa_df.log_g[i_last], mesa_df.log_g[i_last+1], log10(mesa_df.star_age[i_last]), log10(mesa_df.star_age[i_last+1]))
+end
+
+function find_max_mass(mesa_df, min_logg)
+    i_last = findlast(logg -> logg > min_logg, mesa_df.log_g)
+    if i_last == nrow(mesa_df)
+        return mesa_df.star_mass[end]
+    end
+    linear_interpolation(min_logg, mesa_df.log_g[i_last], mesa_df.log_g[i_last+1], mesa_df.star_mass[i_last], mesa_df.star_mass[i_last+1])
+end
+
 # границы сетки по возрастам
 age_1 = 1e8 
 age_2 = 4e8
@@ -89,8 +105,8 @@ lg_flux_rel = 1.91; lg_flux_err = 0.05
 mass_function = 0.1373; mass_function_err = 0.0002
 
 # сетки по различным параметрам (μ = m/max_mass)
-n_μ_1 = 500; n_μ_2 = 500; n_age = 800
-n_m_1 = 800; n_m_2 = 10; n_f = 40
+n_μ_1 = 500; n_μ_2 = 500; n_age = 100
+n_m_1 = 100; n_m_2 = 10; n_f = 40
 
 μ_1_start = 0.8; μ_1_end = 0.99; μ_1_step = (μ_1_end-μ_1_start)/n_μ_1
 μ_2_start = 0.3; μ_2_end = 0.5; μ_2_step = (μ_2_end-μ_2_start)/n_μ_2
