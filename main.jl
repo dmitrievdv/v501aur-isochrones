@@ -38,10 +38,10 @@ end
 """
 фитирование максимальной массы для возраста полиномом степени poly_deg по дате max_age, max_mass
 """
-function fit_max_mass(max_age, max_mass, poly_deg)
+function fit_max_mass(log_max_age, max_mass, poly_deg)
 
-    lg_age_to_fit = log10.(max_age[1e7 .< max_age .< 4.1e8])
-    mass_to_fit = max_mass[1e7 .< max_age .< 4.1e8]
+    lg_age_to_fit = log_max_age[log10(1e7) .< log_max_age .< log10(1e9)]
+    mass_to_fit = max_mass[log10(1e7) .< log_max_age .< log10(1e9)]
 
     function f_to_fit(x)
         f_vals = Polynomial(x).(lg_age_to_fit)
@@ -55,7 +55,23 @@ function fit_max_mass(max_age, max_mass, poly_deg)
     res.minimizer
 end
 
-function find_log_max_age(mesa_df, min_logg)
+function fit_max_age(log_max_age, max_mass, poly_deg)
+    lg_age_to_fit = log_max_age[log10(1e7) .< log_max_age .< log10(1e9)]
+    lg_mass_to_fit = log10.(max_mass[log10(1e7) .< log_max_age .< log10(1e9)])
+
+    function f_to_fit(x)
+        f_vals = Polynomial(x).(lg_mass_to_fit)
+        sum((lg_age_to_fit - f_vals) .^ 2)
+    end
+
+
+    init_val = zeros(poly_deg+1)
+
+    res = optimize(f_to_fit, init_val, LBFGS())
+    res.minimizer
+end
+
+function find_log_final_age(mesa_df, min_logg)
     i_last = findlast(logg -> logg > min_logg, mesa_df.log_g)
     if i_last == nrow(mesa_df)
         return 9.0
@@ -63,7 +79,7 @@ function find_log_max_age(mesa_df, min_logg)
     linear_interpolation(min_logg, mesa_df.log_g[i_last], mesa_df.log_g[i_last+1], log10(mesa_df.star_age[i_last]), log10(mesa_df.star_age[i_last+1]))
 end
 
-function find_max_mass(mesa_df, min_logg)
+function find_final_mass(mesa_df, min_logg)
     i_last = findlast(logg -> logg > min_logg, mesa_df.log_g)
     if i_last == nrow(mesa_df)
         return mesa_df.star_mass[end]
@@ -71,9 +87,56 @@ function find_max_mass(mesa_df, min_logg)
     linear_interpolation(min_logg, mesa_df.log_g[i_last], mesa_df.log_g[i_last+1], mesa_df.star_mass[i_last], mesa_df.star_mass[i_last+1])
 end
 
+calc_max_mass(lg_age, poly_max_fit) = 10^poly_max_fit(lg_age)
+calc_max_lg_age(mass, poly_max_age_fit) = poly_max_age_fit(log10(mass))
+
+function df_add_max_age_mass!(mesa_df, poly_max_mass_fit, poly_max_age_fit)
+    n_rows = nrow(mesa_df)
+    max_mass = zeros(n_rows)
+    log_max_age = zeros(n_rows)
+    
+    for i_row = 1:n_rows
+        max_mass[i_row] = calc_max_mass(log10(mesa_df.star_age[i_row]), poly_max_mass_fit)
+        log_max_age[i_row] = calc_max_lg_age(mesa_df.star_mass[i_row], poly_max_age_fit)
+    end
+
+    mesa_df[!, "max_mass"] = max_mass
+    mesa_df[!, "log_max_age"] = log_max_age
+end
+
+function find_secondary_mass(f, inc, m_1)
+    f_inc = f/sin(inc/180*π)^3
+    find_secondary_mass(f_inc, m_1)
+end
+
+function find_secondary_mass(f_arr :: AbstractVector, inc_arr :: AbstractVector, m_1_arr :: AbstractVector)
+    n_m_1 = length(m_1_arr)
+    n_f = length(f_arr)
+    n_inc = length(inc_arr)
+    
+    m_2_arr = zeros(n_m_1, n_f, n_inc)
+
+    mass_poly = Polynomial([0.0, 0.0, 0.0, 1])
+    
+    for (i_f,f) in enumerate(f_arr)
+        for (i_inc,inc) in enumerate(inc_arr)
+            f_inc = f/sin(inc/180*π)^3
+            mass_poly[2] = -f_inc
+            
+            for (i_m_1,m_1) in enumerate(m_1_arr)
+                mass_poly[1] = -2f_inc*m_1
+                mass_poly[0] = -f*m_1^2
+                mass_poly_roots = Polynomials.roots(mass_poly)
+                m_2_arr[i_m_1, i_f, i_inc] = real.(mass_poly_roots[abs.(imag.(mass_poly_roots)) .≈ 0.0])[1]
+            end 
+        end
+    end
+    return m_2_arr
+end
+
 # границы сетки по возрастам
-age_1 = 1e8 
-age_2 = 4e8
+age_1 = 5e7
+age_2 = 5e8
 
 include("bayes.jl") # вся статистика тут
 
@@ -88,32 +151,30 @@ Av = 0.54*3.1
 mesa_dfs = get_mesa_df_processed.(readdir(mesa_processed_tess_dir), Ref(mesa_processed_tess_dir)) # считывает из тесс папки
 star_masses = [mesa_df.star_mass[1] for mesa_df in mesa_dfs] # начальные массы
 
-begin # Байесовский блок -- вычисления статистики 
-max_age = [mesa_df.star_age[end] for mesa_df in mesa_dfs] # конечные возраста
-max_mass = [mesa_df.star_mass[end] for mesa_df in mesa_dfs] # конечные массы
+@time begin # Байесовский блок -- вычисления статистики 
+max_age = find_log_final_age.(mesa_dfs, 0.55) # конечные возраста
+max_mass = find_final_mass.(mesa_dfs, 0.55) # конечные массы
 
 max_mass_fit = fit_max_mass(max_age, max_mass, 3) # фит максимальной массы для возраста
-max_mass_fit[1] -= 8e-4 # чтобы последняя точка изохроны всегда была больше 1 чуть опускаем весь фит (костыльно)
-                        # т.к. в расчетах есть небольшой шум, из-за этого и фитируем 
+max_age_fit = fit_max_age(max_age, max_mass, 3)
 
 poly_max_fit = Polynomial(max_mass_fit) # создаем объект-полином из фита
-
-calc_max_mass(lg_age, poly_max_fit) = 10^poly_max_fit(lg_age)
+poly_max_age_fit = Polynomial(max_age_fit)
 
 # наблюдательные данные
 lg_flux_rel = 1.91; lg_flux_err = 0.05 
 mass_function = 0.1373; mass_function_err = 0.0002
 
 # сетки по различным параметрам (μ = m/max_mass)
-n_μ_1 = 500; n_μ_2 = 500; n_age = 100
-n_m_1 = 100; n_m_2 = 10; n_f = 40
+n_μ_1 = 500; n_μ_2 = 500; n_age = 400
+n_m_1 = 400; n_m_2 = 10; n_f = 40
 
 μ_1_start = 0.8; μ_1_end = 0.99; μ_1_step = (μ_1_end-μ_1_start)/n_μ_1
 μ_2_start = 0.3; μ_2_end = 0.5; μ_2_step = (μ_2_end-μ_2_start)/n_μ_2
 lg_age_step = (log10(age_2) - log10(age_1))/n_age
 f_step = 10*mass_function_err/n_f
 
-m_1_start = 2.5; m_1_end = 5.0; m_1_step = (m_1_end-m_1_start)/n_m_1
+m_1_start = 3; m_1_end = 4.5; m_1_step = (m_1_end-m_1_start)/n_m_1
 m_2_start = 1.3; m_2_end = 1.9; m_2_step = (m_2_end-m_2_start)/n_m_2
 
 μs_1 = [μ_1_start + (i_μ - 0.5)*μ_1_step for i_μ = 1:n_μ_1]

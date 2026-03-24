@@ -49,6 +49,49 @@ function extract_important_data(mesa_df, poly_max_fit)
     return hcat(log10.(mesa_df.star_age), mesa_df.star_mass ./ calc_max_mass.(log10.(mesa_df.star_age), Ref(poly_max_fit)), mesa_df.log_TESS)
 end
 
+function interpolate_rel_mass_age_linear(mesa_dfs, star_mass_arr, log_age_arr, poly_mass_fit, poly_max_age_fit)
+    i_ms = eachindex(IndexCartesian(), star_mass_arr)
+    n_age = length(log_age_arr)
+    n_data = 3 # radius, flux_ext, flux_noext 
+    colnames = [:log_R, :log_TESS, :log_TESS_noext]
+
+    interpolated = zeros(n_data, size(star_mass_arr)..., n_age)
+    max_log_age_arr = calc_max_lg_age.(star_mass_arr, Ref(poly_max_age_fit))
+    min_max_log_age = minimum(max_log_age_arr)
+    max_max_log_age = maximum(max_log_age_arr)
+    max_mass_arr = calc_max_mass.(log_age_arr, Ref(poly_mass_fit))
+    n_dfs = length(mesa_dfs)
+
+    interpolators = AkimaInterpolation[]
+
+    for i_df = 1:n_dfs
+        df = mesa_dfs[i_df]
+        max_log_age_df = alc_max_lg_age.(df.star_mass, Ref(poly_max_age_fit))
+        for i_col = 1:n_data
+            col = colnames[i_col]
+            itp = AkimaInterpolation()
+            
+        end
+    end
+    
+    for i_age = 1:n_age
+        log_age = log_age_arr[i_age]
+        max_mass = max_mass_arr[i_age]
+        min_rel_age, max_rel_age = (log_age - max_log_age_arr - 0.3, max(log_age - min_max_log_age, 0.0))
+
+        for i_m = ims
+            star_mass = star_mass_arr[i_m]
+            max_log_age = max_log_age[i_m]
+            rel_age = 
+
+            for i_data = 1:3
+                col = colnames[i_data]
+
+            end
+        end
+    end
+end
+
 function extract_important_data_isochrone(log_age, mesa_dfs, poly_max_fit)
     isochrone = fill(1e4, length(mesa_dfs)+1, 2)
     last_points = zeros(length(mesa_dfs)+1, 3)
@@ -121,7 +164,7 @@ function find_tess_flux(lg_age, iso_mass, mesa_dfs, poly_max_fit)
     sort_is = sortperm(isochrone[:,1])
     itp_flux = AkimaInterpolation(isochrone[sort_is,2], isochrone[sort_is,1])
     min_mass = isochrone[1,1]
-    # println(min_mass * calc_max_mass(lg_age, poly_max_fit))
+    # println(min_mass * calc_max_mass(lg_age, poly_max_fit)) 
     map(iso_mass) do μ
         if (μ < min_mass) | (μ > 0.995)
             return 1e4
@@ -180,60 +223,48 @@ function calc_posterior(lg_age, μs_1, μs_2, lg_flux_rel, lg_flux_err, mass_fun
 end
 
 
-function calc_posterior_mass_function(lg_age, μs_1, mass_functions, mass_matrix, lg_flux_rel, lg_flux_err, mass_function, mass_function_err, mesa_dfs, poly_max_fit) # assuming same grid for μ_1, μ_2
-    n_μ_1 = length(μs_1)
-    n_f = length(mass_functions)
+# function calc_posterior_mass_function(lg_age, μs_1, mass_functions, mass_matrix, lg_flux_rel, lg_flux_err, mass_function, mass_function_err, mesa_dfs, poly_max_fit) # assuming same grid for μ_1, μ_2
+#     n_μ_1 = length(μs_1)
+#     n_f = length(mass_functions)
     
-    max_mass = calc_max_mass(lg_age, poly_max_fit)
-    mass_matrix /= max_mass
-    # mass_matrix = zeros(n_μ_1, n_f+1)
-    # mass_matrix[:,1] .= μs_1
+#     max_mass = calc_max_mass(lg_age, poly_max_fit)
+#     mass_matrix /= max_mass
 
-    # for (i_μ_1, μ_1) in enumerate(μs_1)
-    #     for (i_f, f) in enumerate(mass_functions) 
-    #         m_1 = max_mass*μ_1
-    #         m_2 = find_secondary_mass(f, m_1)
-    #         # println("$f $m_1 $m_2")
-    #         mass_matrix[i_μ_1, i_f+1] = m_2/max_mass
-    #     end
-    # end
+#     fluxes = find_tess_flux(lg_age, mass_matrix, mesa_dfs, poly_max_fit)
     
+#     fluxes_1 = fluxes[:,1]
+#     # n_μ_2 = length(μs_2)
+#     fluxes_2 = fluxes[:, 2:end]
+#     # println(fluxes)
+#     # n_μ = length(μs)
+#     posterior = Matrix{Float64}(undef, n_μ_1, n_f)
+    
+#     for (i_μ_1, μ_1) in enumerate(μs_1)
+#         if fluxes_1[i_μ_1,1] > 9e3
+#             posterior[i_μ_1, :] .= 0.0
+#             continue
+#         end
+#         for (i_f, f) in enumerate(mass_functions)
+#             if fluxes_2[i_μ_1, i_f] > 9e3
+#                 posterior[i_μ_1, i_f] = 0.0
+#                 continue
+#             end
+#             μ_2 = mass_matrix[i_μ_1, i_f + 1]
+#             model_lg_flux_rel = fluxes_1[i_μ_1] - fluxes_2[i_μ_1, i_f]
+#             model_mass_function = f
+#             # println("$m_1 $m_2 $model_mass_function $model_lg_flux_rel")
+#             # println(prior_μ(lg_age, μ_1, μ_2, poly_max_fit))
+#             # println(exp(-(model_lg_flux_rel - lg_flux_rel)^2/2lg_flux_err^2))
+#             # println(exp(-(model_mass_function - mass_function)^2/2mass_function_err^2))
+#             posterior[i_μ_1, i_f] = prior_μ(lg_age, μ_1, μ_2, poly_max_fit)
+#             posterior[i_μ_1, i_f] *= exp(-(model_lg_flux_rel - lg_flux_rel)^2/2lg_flux_err^2)
+#             posterior[i_μ_1, i_f] *= exp(-(model_mass_function - mass_function)^2/2mass_function_err^2)
+#             posterior[i_μ_1, i_f] /= max_mass*(μ_2/(μ_1 + μ_2)^2)*(3 - 2μ_2/(μ_1+μ_2))
+#             if isnan(posterior[i_μ_1, i_f])
+#                 posterior[i_μ_1, i_f] = 0.0
+#             end
+#         end
+#     end
 
-    fluxes = find_tess_flux(lg_age, mass_matrix, mesa_dfs, poly_max_fit)
-    
-    fluxes_1 = fluxes[:,1]
-    # n_μ_2 = length(μs_2)
-    fluxes_2 = fluxes[:, 2:end]
-    # println(fluxes)
-    # n_μ = length(μs)
-    posterior = Matrix{Float64}(undef, n_μ_1, n_f)
-    
-    for (i_μ_1, μ_1) in enumerate(μs_1)
-        if fluxes_1[i_μ_1,1] > 9e3
-            posterior[i_μ_1, :] .= 0.0
-            continue
-        end
-        for (i_f, f) in enumerate(mass_functions)
-            if fluxes_2[i_μ_1, i_f] > 9e3
-                posterior[i_μ_1, i_f] = 0.0
-                continue
-            end
-            μ_2 = mass_matrix[i_μ_1, i_f + 1]
-            model_lg_flux_rel = fluxes_1[i_μ_1] - fluxes_2[i_μ_1, i_f]
-            model_mass_function = f
-            # println("$m_1 $m_2 $model_mass_function $model_lg_flux_rel")
-            # println(prior_μ(lg_age, μ_1, μ_2, poly_max_fit))
-            # println(exp(-(model_lg_flux_rel - lg_flux_rel)^2/2lg_flux_err^2))
-            # println(exp(-(model_mass_function - mass_function)^2/2mass_function_err^2))
-            posterior[i_μ_1, i_f] = prior_μ(lg_age, μ_1, μ_2, poly_max_fit)
-            posterior[i_μ_1, i_f] *= exp(-(model_lg_flux_rel - lg_flux_rel)^2/2lg_flux_err^2)
-            posterior[i_μ_1, i_f] *= exp(-(model_mass_function - mass_function)^2/2mass_function_err^2)
-            posterior[i_μ_1, i_f] /= max_mass*(μ_2/(μ_1 + μ_2)^2)*(3 - 2μ_2/(μ_1+μ_2))
-            if isnan(posterior[i_μ_1, i_f])
-                posterior[i_μ_1, i_f] = 0.0
-            end
-        end
-    end
-
-    return posterior
-end
+#     return posterior
+# end
