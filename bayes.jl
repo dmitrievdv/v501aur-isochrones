@@ -49,31 +49,13 @@ function extract_important_data(mesa_df, poly_max_fit)
     return hcat(log10.(mesa_df.star_age), mesa_df.star_mass ./ calc_max_mass.(log10.(mesa_df.star_age), Ref(poly_max_fit)), mesa_df.log_TESS)
 end
 
-function find_nearest_model_point(mesa_dfs, log_age, star_mass, poly_max_age_fit)
-    initial_masses = [df.star_mass[1] for df in mesa_dfs]
-    _, initial_guess_i_df = findmin(abs.(initial_masses .- star_mass))
-    df = mesa_dfs[initial_guess_i_df]
-    log_max_age = calc_max_lg_age(star_mass, poly_max_age_fit)
-    log_rel_age = log_age - log_max_age
-    log_max_age_df = calc_max_lg_age.(df.star_mass, Ref.(poly_max_age_fit))
-    log_rel_age_df = log10.(mesa_dfs[initial_guess_i_df].star_age) - log_max_age_df
-    min_age, initial_guess_i_age = findmin(abs(log_rel_age_df .- log_rel_age))
-    min_mass = df.star_mass[initial_guess_i_age]
-    nearest_found = false
-    i_df = initial_guess_i_df
-    resid = 
-    while nearest_found == false
-        next_i_df = i_df + 1
-        min_age, initial_guess_i_age = findmin(abs(log_rel_age_df .- log_rel_age))
-
-    end
-end
 
 function interpolate_rel_age_linear(mesa_dfs, star_mass_arr, log_age_arr, poly_mass_fit, poly_max_age_fit)
     i_ms = eachindex(IndexCartesian(), star_mass_arr)
     n_age = length(log_age_arr)
     n_data = 3 # radius, flux_ext, flux_noext 
     colnames = [:log_R, :log_TESS, :log_TESS_noext]
+    n_df_rows = [nrow(df) for df in mesa_dfs]
 
     interpolated = zeros(n_data, size(star_mass_arr)..., n_age)
     max_log_age_arr = calc_max_lg_age.(star_mass_arr, Ref(poly_max_age_fit))
@@ -84,7 +66,7 @@ function interpolate_rel_age_linear(mesa_dfs, star_mass_arr, log_age_arr, poly_m
 
     sorted_mass_indices = i_ms[sortperm(vec(star_mass_arr))]
 
-
+    i_age_dfs = ones(Int64, n_dfs)
     for i_m in sorted_mass_indices
         star_mass = star_mass_arr[i_m]
         for i_age = 1:n_age
@@ -95,10 +77,58 @@ function interpolate_rel_age_linear(mesa_dfs, star_mass_arr, log_age_arr, poly_m
                 interpolated[:, i_m, i_age] .= NaN
                 continue
             end
-            i_df, i_mesa = find_nearest_model_point(mesa_dfs, log_age, star_mass)
+            rel_log_age = log_age - max_log_age
+            star_mass_df = 0.0
+            println(star_mass)
+            i_df = 0
+            
+            while star_mass_df < star_mass
+                i_row_prev = i_row
+                i_row = 2
+                i_df += 1
+                df = mesa_dfs[i_df]
+                n_rows = n_df_rows[i_df]
+                # i_age = i_age_dfs[i_df]
+                
+                if df.rel_log_age[end] < rel_log_age
+                    continue
+                end
+
+                while df.rel_log_age[i_row] < rel_log_age
+                    if i_row < n_rows 
+                        i_row += 1
+                    end
+                end
+
+                star_mass_df = df.star_mass[i_row-1] + (df.star_mass[i_row] - df.star_mass[i_row - 1])/
+                            (df.rel_log_age[i_row] - df.rel_log_age[i_row-1])*(rel_log_age - df.rel_log_age[i_row - 1])
+
+                # println("$star_mass_df $log_age $star_mass")
+            end
+            df_m1 = mesa_dfs[i_df-1]
+            df_m2 = mesa_dfs[i_df]
+
+            m_1 = df_m1.star_mass[i_row_prev-1] + (df_m1.star_mass[i_row_prev] - df_m1.star_mass[i_row_prev-1])/
+                                    (df_m1.rel_log_age[i_row_prev] - df_m1.rel_log_age[i_row_prev-1])*(rel_log_age - df_m1.rel_log_age[i_row_prev-1])
+            m_2 = df_m2.star_mass[i_row-1] + (df_m2.star_mass[i_row] - df_m2.star_mass[i_row-1])/
+                                    (df_m2.rel_log_age[i_row] - df_m2.rel_log_age[i_row-1])*(rel_log_age - df_m2.rel_log_age[i_row-1])
+
+            for i_data = 1:n_data
+                col = colnames[i_data]
+                data_1 = df_m1[i_row_prev-1, col] + (df_m1[i_row_prev, col] - df_m1[i_row_prev-1, col])/
+                                    (df_m1.rel_log_age[i_row_prev] - df_m1.rel_log_age[i_row_prev-1])*(rel_log_age - df_m1.rel_log_age[i_row_prev-1])
+
+                data_2 = df_m2[i_row-1, col] + (df_m2[i_row, col] - df_m2[i_row-1, col])/
+                                    (df_m2.rel_log_age[i_row] - df_m2.rel_log_age[i_row-1])*(rel_log_age - df_m2.rel_log_age[i_row-1])
+
+                data = data_1 + (data_2 - data_1)/(m_2 - m_1)*(star_mass - m_1)
+
+                interpolated[i_data, i_m, i_age] = data
+            end
+
         end
     end
-
+    return interpolated
 end
 
 function extract_important_data_isochrone(log_age, mesa_dfs, poly_max_fit)

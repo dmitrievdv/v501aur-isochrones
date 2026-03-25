@@ -161,6 +161,10 @@ max_age_fit = fit_max_age(max_age, max_mass, 3)
 poly_max_fit = Polynomial(max_mass_fit) # создаем объект-полином из фита
 poly_max_age_fit = Polynomial(max_age_fit)
 
+for df in mesa_dfs
+    df[!, :rel_log_age] = log10.(df.star_age) - calc_max_lg_age.(df.star_mass, Ref(poly_max_age_fit))
+end
+
 # наблюдательные данные
 lg_flux_rel = 1.91; lg_flux_err = 0.05 
 mass_function = 0.1373; mass_function_err = 0.0002
