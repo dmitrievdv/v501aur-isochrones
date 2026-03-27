@@ -88,7 +88,7 @@ function find_final_mass(mesa_df, min_logg)
 end
 
 calc_max_mass(lg_age, poly_max_fit) = 10^poly_max_fit(lg_age)
-calc_max_lg_age(mass, poly_max_age_fit) = poly_max_age_fit(log10(mass))
+calc_max_lg_age(mass, poly_max_age_fit) = poly_max_age_fit(log10(mass)) - 0.004
 
 function df_add_max_age_mass!(mesa_df, poly_max_mass_fit, poly_max_age_fit)
     n_rows = nrow(mesa_df)
