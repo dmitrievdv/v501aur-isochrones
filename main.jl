@@ -136,7 +136,7 @@ end
 
 # границы сетки по возрастам
 age_1 = 5e7
-age_2 = 5e8
+age_2 = 1e9
 
 include("bayes.jl") # вся статистика тут
 
@@ -152,8 +152,8 @@ mesa_dfs = get_mesa_df_processed.(readdir(mesa_processed_tess_dir), Ref(mesa_pro
 star_masses = [mesa_df.star_mass[1] for mesa_df in mesa_dfs] # начальные массы
 
 @time begin # Байесовский блок -- вычисления статистики 
-max_age = find_log_final_age.(mesa_dfs, 0.55) # конечные возраста
-max_mass = find_final_mass.(mesa_dfs, 0.55) # конечные массы
+max_age = find_log_final_age.(mesa_dfs, 0.8) # конечные возраста
+max_mass = find_final_mass.(mesa_dfs, 0.8) # конечные массы
 
 max_mass_fit = fit_max_mass(max_age, max_mass, 3) # фит максимальной массы для возраста
 max_age_fit = fit_max_age(max_age, max_mass, 3)
@@ -171,14 +171,14 @@ mass_function = 0.1373; mass_function_err = 0.0002
 
 # сетки по различным параметрам (μ = m/max_mass)
 n_μ_1 = 500; n_μ_2 = 500; n_age = 400
-n_m_1 = 400; n_m_2 = 10; n_f = 40
+n_m_1 = 800; n_m_2 = 10; n_f = 40
 
 μ_1_start = 0.8; μ_1_end = 0.99; μ_1_step = (μ_1_end-μ_1_start)/n_μ_1
 μ_2_start = 0.3; μ_2_end = 0.5; μ_2_step = (μ_2_end-μ_2_start)/n_μ_2
 lg_age_step = (log10(age_2) - log10(age_1))/n_age
 f_step = 10*mass_function_err/n_f
 
-m_1_start = 3; m_1_end = 4.5; m_1_step = (m_1_end-m_1_start)/n_m_1
+m_1_start = 2; m_1_end = 4.5; m_1_step = (m_1_end-m_1_start)/n_m_1
 m_2_start = 1.3; m_2_end = 1.9; m_2_step = (m_2_end-m_2_start)/n_m_2
 
 μs_1 = [μ_1_start + (i_μ - 0.5)*μ_1_step for i_μ = 1:n_μ_1]
@@ -189,23 +189,35 @@ ms_2 = [m_2_start + (i_m - 0.5)*m_2_step for i_m = 1:n_m_2]
 lg_ages = [log10(age_1) + (i - 0.5)*lg_age_step for i = 1:n_age]
 max_masses = calc_max_mass.(lg_ages, Ref(poly_max_fit))
 
+
+
 mass_functions = [mass_function - 5*mass_function_err + (i_f-0.5)*f_step for i_f = 1:n_f]
+incs = [90]
 
-# расчет матрицы масс -- так как расчет массы из функции масс довольно затратен он выносится за расчет апостериора
+ms_2 = find_secondary_mass(mass_functions, incs, ms_1)
+itp_data_1 = interpolate_rel_age_linear(mesa_dfs, ms_1, lg_ages, poly_max_fit, poly_max_age_fit)
+itp_data_2 = interpolate_rel_age_linear(mesa_dfs, ms_2, lg_ages, poly_max_fit, poly_max_age_fit)
 
-mass_matrix = zeros(n_m_1, n_f+1)
-mass_matrix[:,1] .= ms_1
-for (i_m_1, m_1) in enumerate(ms_1)
-    for (i_f, f) in enumerate(mass_functions) 
-        m_2 = find_secondary_mass(f, m_1)
-        mass_matrix[i_m_1, i_f+1] = m_2
-    end
-end
+orbital_period = 68.83
 
-# расчет постериора по параметрам μ, f, lg t
-posterior= stack([calc_posterior_mass_function(lg_age, ms_1/max_mass, mass_functions, mass_matrix, lg_flux_rel, lg_flux_err, 
-                            mass_function, mass_function_err, mesa_dfs, poly_max_fit)/max_mass # деление на массу для перехода от μ к m
-                                     for (lg_age, max_mass) in zip(lg_ages, max_masses)])
+posterior = calc_posterior_mass_function_inc(lg_ages, ms_1, itp_data_1, mass_functions, incs, ms_2, itp_data_2, 
+                        lg_flux_rel, lg_flux_err, mass_function, mass_function_err, orbital_period, poly_max_fit)[:,:,:,1]
+
+# # расчет матрицы масс -- так как расчет массы из функции масс довольно затратен он выносится за расчет апостериора
+
+# mass_matrix = zeros(n_m_1, n_f+1)
+# mass_matrix[:,1] .= ms_1
+# for (i_m_1, m_1) in enumerate(ms_1)
+#     for (i_f, f) in enumerate(mass_functions) 
+#         m_2 = find_secondary_mass(f, m_1)
+#         mass_matrix[i_m_1, i_f+1] = m_2
+#     end
+# end
+
+# # расчет постериора по параметрам μ, f, lg t
+# posterior= stack([calc_posterior_mass_function(lg_age, ms_1/max_mass, mass_functions, mass_matrix, lg_flux_rel, lg_flux_err, 
+#                             mass_function, mass_function_err, mesa_dfs, poly_max_fit)/max_mass # деление на массу для перехода от μ к m
+#                                      for (lg_age, max_mass) in zip(lg_ages, max_masses)])
 posterior = posterior / sum(posterior)/ lg_age_step/m_1_step/f_step
 
 # сглаживание постериора расчетом вероятности в квадрате smooth_n*smooth_n точек сетки по m,lg t
